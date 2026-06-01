@@ -34,51 +34,6 @@ let backgroundState = { mode: 'idle', gain: 0, color: 'black' };
 
 // Create the device
 async function main(audioContext) {
-  //const audioContext = new AudioContext();
-
-  /* const config = loadConfig();
-  const client = new Client(config);
-  const audioContext = new AudioContext();
-  console.log(audioContext.sampleRate);
- 
-  client.pluginManager.register('checkin', pluginCheckin);
-  client.pluginManager.register('platform-init', pluginPlatformInit, { 
-    audioContext, //devicemotion
-    /* onActivate: (plugin) => {
-      // tryEnterFullscreen now returns a Promise
-      return tryEnterFullscreen();
-    }
-  }); 
-  client.pluginManager.register('sync', pluginSync, {
-    getTimeFunction: () => audioContext.currentTime, 
-  }, ['platform-init']); 
-
-  // cf. https://soundworks.dev/tools/helpers.html#browserlauncher
-  launcher.register(client, { initScreensContainer: $container }); */
-
-  //await client.start();
-
-  //const platformInit = await client.pluginManager.get('platform-init');
-
-
-  // Attempt to enter full-screen mode automatically after initial user gesture
-  //tryEnterFullscreen();
-
-  // retrieve initialized sync plugin 
-  //const sync = await client.pluginManager.get('sync'); 
-  /* const scheduler = new Scheduler(() => sync.getSyncTime(), { 
-    currentTimeToProcessorTimeFunction: syncTime => sync.getLocalTime(syncTime), 
-  }); */
-
-  //const checkin = await client.pluginManager.get('checkin');
-  //const index = checkin.getIndex();
-  //const instr = checkin.getData();
-  //const global = await client.stateManager.attach('global');
-  //const user = await client.stateManager.create('user');
-  //const control = await client.stateManager.create('control');
-
-  //user.set({id: index});
-  //control.set({id: index});
 
   // Create gain node and connect it to audio output
   const outputNode = audioContext.createGain();
@@ -89,38 +44,6 @@ async function main(audioContext) {
   analyser.smoothingTimeConstant = 0.3;
   analyser.connect(outputNode)
   const baseColor = '#000000';
-
-  /* const humGain = audioContext.createGain();
-  humGain.gain.value = 0.2;
-  humGain.connect(outputNode);
-
-
-  const humSample = './assets/samples/hum.wav';
-  const humBuffer = await loadAudioBuffer(humSample, audioContext.sampleRate);
-  const volume = 0.2;
-  const startTime = now() + 0.5; // 1 second in the future
-  //const startTime = sync.getLocalTime() + 0.5; // 1 second in the future
-  //const isRunning = global.get('running');
-
-  const humLoop = new LoopSampler(audioContext, humBuffer, volume, startTime);
-  humLoop.output.connect(humGain); */
-
-  /* function playerLoop(startTime, isRunning) {
-    if (!isRunning && !scheduler.has(humLoop.play)) {
-        scheduler.add(humLoop.play, startTime);
-        //console.log('adding scheduler');
-      } else if (!isRunning && scheduler.has(humLoop.play)) {
-        scheduler.remove(humLoop.play);
-        humLoop.stop(startTime);
-        scheduler.add(humLoop.play, startTime+0.5);
-        //console.log('reset scheduler');
-      } else if (isRunning && scheduler.has(humLoop.play)) { 
-        scheduler.remove(humLoop.play);
-        humLoop.stop(startTime);
-      }
-  };
-
-  playerLoop(startTime, isRunning); */
 
 
   const patchExportURL = "export/patch.export.json";
@@ -177,40 +100,6 @@ async function main(audioContext) {
 
   return audioBuffer;
 }
-
-  const hitSampleFiles = [
-    'drakqs-NS-A#5-ff-75.wav',
-    'drakqs-NS-A#5-pp-826.wav',
-    'drakqs-NS-A#6-pp-206.wav',
-    'drakqs-NS-A#7-ff-1039.wav',
-    'drakqs-NS-A6-ff-1025.wav',
-    'drakqs-NS-A6-ff-663.wav',
-    'drakqs-NS-A7-ff-518.wav',
-    'drakqs-NS-B5-f-654.wav',
-    'drakqs-NS-B6-f-1225.wav',
-    'drakqs-NS-B7-pp-721.wav',
-  ];
-  const hitBufferDependencies = hitSampleFiles.map((filename, index) => ({
-    id: `samples.${index + 1}`,
-    file: `samples/hit/${encodeURIComponent(filename)}`,
-  }));
-
-  try {
-    if (typeof device.loadDataBufferDependencies === 'function') {
-      const results = await device.loadDataBufferDependencies(hitBufferDependencies);
-      const failed = results.filter((entry) => entry.type !== 'success');
-      if (failed.length > 0) {
-        console.warn('Some hit buffers failed to load:', failed);
-      }
-    } else {
-      for (const dependency of hitBufferDependencies) {
-        const buffer = await loadAudioBuffer(dependency.file, audioContext.sampleRate);
-        await device.setDataBuffer(dependency.id, buffer);
-      }
-    }
-  } catch (err) {
-    console.error('Failed to load hit sample buffers:', err);
-  }
 
   // Connect the device to the web audio graph
   device.node.connect(analyser);
@@ -273,9 +162,11 @@ async function main(audioContext) {
     backgroundRAF = requestAnimationFrame(render);
   }
 
-  function applyBackgroundMode(harshness) {
+  function applyBackgroundMode(harshness, penalty = 0) {
     if (harshness > 0) {
       backgroundState = { mode: 'harsh', gain: 0.8, color: 'white' };
+    } else if (penalty > 0) {
+      backgroundState = { mode: 'penalty', gain: 0.4, color: 'red' };
     } else {
       backgroundState = { mode: 'idle', gain: 0, color: 'black' };
     }
@@ -288,8 +179,11 @@ async function main(audioContext) {
   }
 
   // initial goal message
-  const goal = [30, 30, 100];
+  const goal = [30, 30, 5];
   sendMessageToInport(device, 'goal', goal);
+
+  let deviceStartedAt = null;
+  let isActive = false;
 
   // Penalty counter state
   let penaltyCounter = 10.0;
@@ -333,31 +227,6 @@ async function main(audioContext) {
     if (fill) fill.style.width = `${normalized * 100}%`;
   }
 
-  /* const vibrationPattern = [140, 80, 140];
-  const vibrationRepeatMs = 600;
-  let vibrationInterval = null;
-
-  function canVibrate() {
-    return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
-  }
-
-  function startVibration() {
-    if (!canVibrate() || vibrationInterval) return;
-    navigator.vibrate(vibrationPattern);
-    vibrationInterval = setInterval(() => {
-      navigator.vibrate(vibrationPattern);
-    }, vibrationRepeatMs);
-  }
-
-  function stopVibration() {
-    if (!canVibrate()) return;
-    if (vibrationInterval) {
-      clearInterval(vibrationInterval);
-      vibrationInterval = null;
-    }
-    navigator.vibrate(0);
-  } */
-
   function startPenaltyCounter() {
     if (penaltyInterval) return; // already running
     // ensure display shows current counter
@@ -388,138 +257,22 @@ async function main(audioContext) {
 
   // Listen for messages from RNBO device
   device.messageEvent.subscribe((ev) => {
-    /* if (ev.tag === "out5") {
-      const zone = ev.payload;
-      console.log(`Received message ${ev.tag}: ${ev.payload}`);
-      user.set({zone: zone});// store in user state
-    } */
+    if (ev.tag === "out4") {
+      if (!isActive) return;
+      const harshness = ev.payload;
+      if (deviceStartedAt !== null && (performance.now() - deviceStartedAt) < 250) return;
+      applyBackgroundMode(harshness, 0);
+    }
     if (ev.tag === "out2") {
-      const harshness = ev.payload; // first value in the message
-      //const penalty = global.get('penalty');
-      console.log(`Received message ${ev.tag}: ${harshness}`);
-      //user.set({harsh: harshness});// store in user state
-      applyBackgroundMode(harshness);  
+      const sharpness = ev.payload;
+      const el = document.getElementById('sharpness-value');
+      if (el) el.textContent = typeof sharpness === 'number' ? sharpness.toFixed(2) : sharpness;
     }
     if (ev.tag === "out3") {
-      const violence = ev.payload;
-      updateHarshnessDisplay(violence);
-      //console.log(`Received message ${ev.tag}: ${ev.payload}`); 
-    }
-    if (ev.tag === "out4") {
-      const sharpness = ev.payload;
-      updateSharpnessDisplay(sharpness);
-      //console.log(`Received message ${ev.tag}: ${ev.payload}`); 
-    }
-    if (ev.tag === "out5") {
-      const energy = ev.payload;
-      updateEnergyDisplay(energy);
-      //console.log(`Received message ${ev.tag}: ${ev.payload}`);
-      //user.set({energy: energy});// store in user state
-    }
-    /* if (ev.tag === "out5") {
-      const style = ev.payload;
-      console.log('Style received:', style);
-      user.set({style: style});
-      control.set({del: style[0]}); // trigger update
-      control.set({phase: style[1]});
-      control.set({bp: style[2]});
-    } */
-  });
-
-  /* global.onUpdate(updates => {
-    if ('running' in updates) {
-      const isRunning = updates['running'];
-      const enterOverlay = document.getElementById("enter-overlay");
-      const gameOverOverlay = document.getElementById('gameover-overlay');
-      const startTime = sync.getLocalTime() + 0.5; // 1 second in the future
-
-      if (isRunning) {
-        user.set({ life: true });
-        console.log('you live!');
-        enterOverlay.style.display = "none";
-        gameOverOverlay.style.display = "none";
-      } else { 
-        stopPenaltyCounter(true);
-        gameOverOverlay.style.display = "flex";
-      }
-      console.log('Running state updated:', isRunning);
-      //playerLoop(startTime, isRunning);
-      //sendMessageToInport(device, 'start', isRunning ? [1] : [0]);
-    }
-    if ('penalty' in updates) {
-      const penalty = updates['penalty'];
-      const harshness = user.get('harsh');
-      // start/stop penalty countdown
-      if (penalty > 0 && harshness == 0) {
-        sendMessageToInport(device, 'penalty', penalty);
-        startPenaltyCounter();
-      } else {
-        sendMessageToInport(device, 'penalty', 0);
-        stopPenaltyCounter(false);
-      }
-      applyBackgroundMode(harshness, penalty);
-    }
-    if ('hrsh_threshold' in updates) {
-      const param = getParameter(device, "hrsh_threshold");
-      console.log('Updating hrsh_threshold to', updates['hrsh_threshold']);
-      param.value = updates['hrsh_threshold'];
-    }
-  }); 
-
-  user.onUpdate(updates => {
-    if ('harsh' in updates) {
-      const harshness = Number(updates['harsh'] ?? 0);
-      if (harshness > 0) {
-        startVibration();
-      } else {
-        stopVibration();
-      }
-    }
-    if ('goal' in updates) {
-      const newGoal = updates['goal'];
-      //console.log('Goal updated:', newGoal);
-      sendMessageToInport(device, 'goal', newGoal);
-    }
-    if ('preset' in updates) {
-      const newPreset = updates['preset'];
-      console.log('Preset updated:', newPreset);
-      loadPresetAtIndex(device, presets, newPreset);
-    }
-    if ('life' in updates) {
-      const isAlive = updates['life'];
-      setGameoverOverlay(!isAlive);
-    }
-    if ('LFO' in updates) {
-      sendMessageToInport(device, 'LFO', updates['LFO']);
-      console.log('Updating LFO to', updates['LFO']);
-    }
-    if ('del' in updates) {
-      const param = getParameter(device, "del");
-      console.log('Updating del to', updates['del']);
-      param.value = updates['del'];
-    }
-    if ('phase' in updates) {
-      const param = getParameter(device, "phase");
-      console.log('Updating phase to', updates['phase']);
-      param.value = updates['phase'];
-    }
-    if ('bp' in updates) {
-      const param = getParameter(device, "bp");
-      console.log('Updating bp to', updates['bp']);
-      param.value = updates['bp'];
-    }
-    if ('fb_gain' in updates) {
-      const param = getParameter(device, "fb_gain");
-      console.log('Updating fb_gain to', updates['fb_gain']);
-      param.value = updates['fb_gain'];
-    }
-    if ('fb_trim' in updates) {
-      const param = getParameter(device, "fb_trim");
-      console.log('Updating fb_trim to', updates['fb_trim']);
-      param.value = updates['fb_trim'];
+      // loudness — received but not displayed
     }
   });
- */
+
 
   // -------------------------------------------------------------------
   // RENDER FUNCTION AND GRID SETUP
@@ -530,26 +283,66 @@ async function main(audioContext) {
       if (overlay) overlay.style.display = visible ? 'flex' : 'none';
     };
     setGameoverOverlay(false);
-    setupUI(device, presets);
+    setupUI(device, presets, audioContext,
+      () => { isActive = true; deviceStartedAt = performance.now(); },
+      () => { isActive = false; }
+    );
     startOscilloscope(analyser);
   }
 
 document.addEventListener("DOMContentLoaded", () => {
   const enterButton = document.getElementById("enter-button");
   const enterOverlay = document.getElementById("enter-overlay");
+  const enterText = document.getElementById("enter-text");
+
+  const enterTexts = [
+    [
+      'B3-H4RSH_S0L0_1NSTR',
+      'Tap and hold the pad to generate the sound.',
+      'Every tap brings a new noise.',
+      'Drag around and move the slider to shape it.',
+    ],
+    /* [
+      'Turn up the volume on your device.',
+      'Turn up the brightness of your screen.',
+      'Enjoy!',
+    ], */
+  ];
+  let enterTextIndex = 0;
+
+  const renderEnterText = (index) => {
+    if (!enterText) return;
+    const lines = enterTexts[index] || [];
+    const nodes = lines.map((line) => {
+      const p = document.createElement('p');
+      const em = document.createElement('em');
+      em.textContent = line;
+      p.appendChild(em);
+      return p;
+    });
+    enterText.replaceChildren(...nodes);
+    if (enterButton) {
+      enterButton.style.display = 'flex';
+    }
+  };
+
+  if (enterText) renderEnterText(enterTextIndex);
 
   enterButton.onclick = async () => {
-    // Remove overlay
+    enterTextIndex++;
+    if (enterTextIndex < enterTexts.length) {
+      renderEnterText(enterTextIndex);
+      return;
+    }
+
     enterOverlay.style.display = "none";
 
-    // Create and resume AudioContext in direct response to user gesture
     const WAContext = window.AudioContext || window.webkitAudioContext;
     const context = new WAContext();
     console.log("AudioContext created:", context);
     await context.resume();
     console.log("AudioContext resumed");
 
-    // Call setup and pass context
     await main(context);
   };
 });
@@ -609,9 +402,15 @@ function getParameter(device, parameterName) {
   return parameter;
 }
 function loadPresetAtIndex(device, presets, index) {
-    const preset = presets[index];
-    console.log(`Loading preset ${preset.name}`);
-    device.setPreset(preset.preset);
+  const presetIndex = Math.floor(Number(index));
+  if (!Number.isFinite(presetIndex) || presetIndex < 0 || presetIndex >= presets.length) {
+    console.warn('Ignoring invalid preset index:', index);
+    return;
+  }
+  const preset = presets[presetIndex];
+  if (!preset) return;
+  console.log(`Loading preset ${preset.name}`);
+  device.setPreset(preset.preset);
 }
 function sendMessageToInport(device, inportTag, values) {
   //Turn the text into a list of numbers (RNBO messages must be numbers, not text)
@@ -684,380 +483,136 @@ function startOscilloscope(analyser) {
   draw();
 }
 
-function setupUI(device, presets) {
-    // Get all UI elements we need
-    const canvas = document.getElementById('xy-pad');
-    const ctx = canvas.getContext('2d');
-    const slider = document.getElementById('xy-slider');
-    const sliderValue = document.getElementById('xy-slider-value');
-    const touchDebug = document.getElementById('touch-debug');
-    const presetButtons = document.querySelectorAll('.preset-btn');
-    //const waveButtons = document.querySelectorAll('.wave-btn');
-    //const randomizeButton = document.getElementById('randomize-button');
-    const accentColor = getComputedStyle(document.documentElement)
-      .getPropertyValue('--sw-accent-color').trim() || '#ff44b4';
+function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
+  const canvas = document.getElementById('xy-pad');
+  const ctx = canvas.getContext('2d');
+  const touchDebug = document.getElementById('touch-debug');
+  const presetButtons = document.querySelectorAll('.preset-btn');
+  const accentColor = getComputedStyle(document.documentElement)
+    .getPropertyValue('--sw-accent-color').trim() || '#ff44b4';
 
-    /* const updateControlPosition = (x, y, z) => {
-      if (control) control.set({ X: x, Y: y, Z: z });
-    }; */
+  let padSize = canvas.width;
+  const dotRadius = 10;
+  let dotX = padSize / 2;
+  let dotY = padSize / 2;
+  let dragging = false;
+  let activePointerId = null;
 
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const toPercent = (value) => Math.round((value / padSize) * 100);
-    const zoomFromZ = (z) => 1 + (clamp(z, 0, 100) / 100) * 3;
-    const sliderMaxValue = Number(slider?.max ?? 100) || 100;
-    let sliderWasAtMax = Number(slider?.value || 0) >= sliderMaxValue;
-    const triggerLfoOnSliderMax = (value) => {
-      const isAtMax = Number(value) >= sliderMaxValue;
-      if (isAtMax && !sliderWasAtMax) {
-        sendMessageToInport(device, 'LFO', 1);
-        console.log('Slider reached max, triggering LFO');
-      }
-      sliderWasAtMax = isAtMax;
-    };
-    const emitTouch = (mapped, z, reason) => {
-        //updateControlPosition(mapped.touchX, mapped.touchY, z);
-        sendMessageToInport(device, 'touch', [mapped.touchX, mapped.touchY, z]);
-        if (touchDebug) touchDebug.textContent = `[${mapped.touchX}, ${mapped.touchY}, ${z}]`;
-    };
+  function resizePad() {
+    const container = canvas.parentElement;
+    const rect = container.getBoundingClientRect();
+    const cs = getComputedStyle(container);
+    const innerW = rect.width
+      - parseFloat(cs.paddingLeft || '0')
+      - parseFloat(cs.paddingRight || '0');
+    const size = Math.max(150, Math.floor(innerW || window.innerWidth * 0.9));
+    padSize = size;
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.width = '100%';
+    canvas.style.height = `${size}px`;
+    dotX = Math.max(dotRadius, Math.min(padSize - dotRadius, dotX));
+    dotY = Math.max(dotRadius, Math.min(padSize - dotRadius, dotY));
+    drawPad();
+  }
 
-    // --- Multitouch: Use pointer events for pad and slider ---
-    // Setup slider event handling
-    if (slider) {
-      slider.addEventListener('input', (e) => {
-        const v = Number(e.target.value);
-        const focusX = focusPoint.x;
-        const focusY = focusPoint.y;
-
-        if (sliderValue) sliderValue.textContent = String(v);
-        triggerLfoOnSliderMax(v);
-
-        const mapped = mapToOutput(lastRaw.x, lastRaw.y, focusX, focusY);
-        focusPoint.x = mapped.zoomedX;
-        focusPoint.y = mapped.zoomedY;
-
-        zoomFactor = zoomFromZ(v);
-        console.log('Zoom factor:', zoomFactor);
-        updateGridFocus();
-
-        //const mapped = mapToOutput(lastRaw.x, lastRaw.y, focusPoint.x, focusPoint.y);
-        //emitTouch(mapped, v, 'slider');
-      });
+  function getXY(e) {
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+    if (e.touches && e.touches.length > 0) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else if (e.clientX !== undefined && e.clientY !== undefined) {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
     }
+    x = Math.max(dotRadius, Math.min(padSize - dotRadius, x));
+    y = Math.max(dotRadius, Math.min(padSize - dotRadius, y));
+    return { x, y };
+  }
 
-    if (presetButtons && presetButtons.length) {
-      presetButtons.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const presetIndex = Number(btn.dataset.preset || 0);
-          if (!Array.isArray(presets) || presets.length <= presetIndex) {
-            console.warn('Preset index out of range:', presetIndex);
-            return;
-          }
-            loadPresetAtIndex(device, presets, presetIndex);
-        });
-      });
-    }
-    loadPresetAtIndex(device, presets, 0); // load first preset by default
-    console.log('UI setup complete');
+  function drawPad() {
+    ctx.clearRect(0, 0, padSize, padSize);
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, dotRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = accentColor || '#ff44b4';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
-    // Setup pad
-    const padSize = canvas.width;
-    const dotRadius = 10;
-    let dotX = padSize / 2 + Math.random() * 200 - 100;
-    let dotY = padSize / 2 + Math.random() * 200 - 100;
-    let dragging = false;
-    let startActive = false;
-    let targetPoint = [30, 30];
-    let showTarget = false;
-    let focusPoint = { x: dotX, y: dotY };
-    let lastRaw = { x: dotX, y: dotY };
-    let lastMapped = { x: dotX, y: dotY };
-    let zoomFactor = zoomFromZ(Number(slider?.value || 50));
-    let zoomResetRAF = null;
-    let focusLerpRAF = null;
-    const baseGridSize = 32;
+  resizePad();
+  window.addEventListener('resize', resizePad);
 
-    // --- Pad: Use pointer events for multitouch ---
-    // padSize, dotRadius, dotX, dotY, dragging now declared only once (see pointer events section below)
-    let activePointerId = null;
-
-    function getXY(e) {
-        const rect = canvas.getBoundingClientRect();
-        let clientX;
-        let clientY;
-
-        if (e.touches && e.touches.length > 0) {
-            clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
-        } else if (e.clientX !== undefined && e.clientY !== undefined) {
-            clientX = e.clientX;
-            clientY = e.clientY;
-        } else {
-            return { x: dotX, y: dotY };
-        }
-
-        // Convert from CSS pixels to canvas coordinates to avoid drift when
-        // canvas is displayed at a different size than its internal buffer.
-        const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
-        const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
-        let x = (clientX - rect.left) * scaleX;
-        let y = (clientY - rect.top) * scaleY;
-        
-        x = Math.max(dotRadius, Math.min(padSize - dotRadius, x));
-        y = Math.max(dotRadius, Math.min(padSize - dotRadius, y));
-        return { x, y };
-    }
-
-    function getTargetCoords() {
-        const gx = Number(targetPoint?.[0] ?? 50);
-        const gy = Number(targetPoint?.[1] ?? 50);
-        const tx = Math.max(0, Math.min(100, gx));
-        const ty = Math.max(0, Math.min(100, gy));
-        return {
-          x: (tx / 100) * padSize,
-          y: (ty / 100) * padSize,
-        };
-    }
-
-    function updateGridFocus() {
-        if (!canvas) return;
-        const grid = baseGridSize * zoomFactor;
-        const zoomedFocusX = focusPoint.x;
-        const zoomedFocusY = focusPoint.y;
-        const offsetX = ((zoomedFocusX % grid) + grid) % grid;
-        const offsetY = ((zoomedFocusY % grid) + grid) % grid;
-        canvas.style.backgroundSize = `${grid}px ${grid}px`;
-        canvas.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
-    }
-
-    function cancelZoomReset() {
-        if (zoomResetRAF) {
-          cancelAnimationFrame(zoomResetRAF);
-          zoomResetRAF = null;
-        }
-    }
-
-    function cancelFocusLerp() {
-        if (focusLerpRAF) {
-          cancelAnimationFrame(focusLerpRAF);
-          focusLerpRAF = null;
-        }
-    }
-
-    function animateFocusToLastRaw(durationMs = 200) {
-        cancelFocusLerp();
-        const start = performance.now();
-        const startX = focusPoint.x;
-        const startY = focusPoint.y;
-        const targetX = lastRaw.x;
-        const targetY = lastRaw.y;
-
-        const step = (now) => {
-          const t = Math.min(1, (now - start) / durationMs);
-          focusPoint.x = startX + (targetX - startX) * t;
-          focusPoint.y = startY + (targetY - startY) * t;
-          updateGridFocus();
-          if (t < 1) {
-            focusLerpRAF = requestAnimationFrame(step);
-          } else {
-            focusLerpRAF = null;
-          }
-        };
-
-        focusLerpRAF = requestAnimationFrame(step);
-    }
-
-    function animateZoomToZero(durationMs = 1000) {
-        if (!slider) return;
-        cancelZoomReset();
-        const start = performance.now();
-        const fromVal = Number(slider.value || 0);
-        const toVal = 0;
-
-        const step = (now) => {
-          const t = Math.min(1, (now - start) / durationMs);
-          const v = Math.round(fromVal + (toVal - fromVal) * t);
-          slider.value = String(v);
-          if (sliderValue) sliderValue.textContent = String(v);
-
-          zoomFactor = zoomFromZ(v);
-          updateGridFocus();
-
-          const mapped = mapToOutput(lastRaw.x, lastRaw.y, focusPoint.x, focusPoint.y);
-          emitTouch(mapped, v, 'zoom-reset');
-
-          if (t < 1) {
-            zoomResetRAF = requestAnimationFrame(step);
-          } else {
-            zoomResetRAF = null;
-          }
-        };
-
-        zoomResetRAF = requestAnimationFrame(step);
-    }
-
-    /* function updateFocusFromPointer(rawX, rawY) {
-        if (zoomFactor <= 1) {
-          focusPoint = { x: rawX, y: rawY };
+  if (presetButtons && presetButtons.length) {
+    presetButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const presetIndex = Number(btn.dataset.preset || 0);
+        if (!Array.isArray(presets) || presets.length <= presetIndex) {
+          console.warn('Preset index out of range:', presetIndex);
           return;
         }
-        const halfWindow = padSize / (2 * zoomFactor);
-        const speed = 0.25;
-        let nextX = focusPoint.x;
-        let nextY = focusPoint.y;
+        loadPresetAtIndex(device, presets, presetIndex);
+      });
+    });
+  }
 
-        if (rawX > focusPoint.x + halfWindow) {
-          nextX = focusPoint.x + (rawX - (focusPoint.x + halfWindow)) * speed;
-        } else if (rawX < focusPoint.x - halfWindow) {
-          nextX = focusPoint.x + (rawX - (focusPoint.x - halfWindow)) * speed;
-        }
-
-        if (rawY > focusPoint.y + halfWindow) {
-          nextY = focusPoint.y + (rawY - (focusPoint.y + halfWindow)) * speed;
-        } else if (rawY < focusPoint.y - halfWindow) {
-          nextY = focusPoint.y + (rawY - (focusPoint.y - halfWindow)) * speed;
-        }
-
-        focusPoint = {
-          x: clamp(nextX, halfWindow, padSize - halfWindow),
-          y: clamp(nextY, halfWindow, padSize - halfWindow),
-        };
-    } */
-
-    function mapToOutput(rawX, rawY, focusX, focusY) {
-        const zoomedX = clamp(focusX+(rawX-focusX)/zoomFactor, Math.max(0, focusX - padSize/zoomFactor), Math.min(padSize, focusX + padSize/zoomFactor));
-        const zoomedY = clamp(focusY+(rawY-focusY)/zoomFactor, Math.max(0, focusY - padSize/zoomFactor), Math.min(padSize, focusY + padSize/zoomFactor));
-        return {
-          zoomedX,
-          zoomedY,
-          touchX: toPercent(zoomedX),
-          touchY: toPercent(zoomedY),
-        };
-    }
-
-    function drawPad() {
-        ctx.clearRect(0, 0, padSize, padSize);
-        if (showTarget) {
-          const target = getTargetCoords();
-          ctx.save();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(target.x, target.y, 8, 0, 2 * Math.PI);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(target.x - 12, target.y);
-          ctx.lineTo(target.x + 12, target.y);
-          ctx.moveTo(target.x, target.y - 12);
-          ctx.lineTo(target.x, target.y + 12);
-          ctx.stroke();
-          ctx.restore();
-        }
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, dotRadius, 0, 2 * Math.PI);
-        ctx.fillStyle = accentColor || '#ff44b4';
-        ctx.fill();
-        ctx.strokeStyle = '#000';
-        ctx.stroke();
-    }
-
-    // Use pointer events for multitouch
-    canvas.addEventListener('pointerdown', (e) => {
-        if (activePointerId === null) {
-            cancelZoomReset();
-            activePointerId = e.pointerId;
-            dragging = true;
-            let { x, y } = getXY(e);
-            dotX = x;
-            dotY = y;
-            focusPoint = { x: dotX, y: dotY };
-            lastRaw = { x: dotX, y: dotY };
-            //updateGridFocus();
-            drawPad();
-            const mapped = mapToOutput(dotX, dotY, focusPoint.x, focusPoint.y);
-            lastMapped = mapped;
-            const sliderVal = Number(slider?.value || 50);
-            emitTouch(mapped, sliderVal, 'pointerdown');
-            if (!startActive) {
-              sendMessageToInport(device, 'randomize', [1]);
-              sendMessageToInport(device, 'start', [1]);
-              //if (control) control.set({active: 1});
-              startActive = true;
-        }
+  canvas.addEventListener('pointerdown', async (e) => {
+    if (activePointerId === null) {
+      if (audioContext.state !== 'running') {
+        try { await audioContext.resume(); } catch (err) {}
       }
-    });
+      activePointerId = e.pointerId;
+      dragging = true;
+      let { x, y } = getXY(e);
+      dotX = x;
+      dotY = y;
+      drawPad();
+      const touchX = Math.round((dotX / padSize) * 100);
+      const touchY = Math.round((dotY / padSize) * 100);
+      const messageEvent = new RNBO.MessageEvent(RNBO.TimeNow, 'touch', [touchX, touchY]);
+      device.scheduleEvent(messageEvent);
+      if (touchDebug) touchDebug.textContent = `[${touchX}, ${touchY}]`;
+      sendMessageToInport(device, 'randomize', [1]);
+      sendMessageToInport(device, 'start', [1]);
+      if (onDeviceStart) onDeviceStart();
+    }
+  });
 
-    // Waveform buttons: toggle active/inactive styling
-    /* if (waveButtons && waveButtons.length) {
-      waveButtons.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          btn.classList.toggle('active');
-          btn.classList.toggle('inactive');
-        });
-      });
-    } */
+  canvas.addEventListener('pointermove', (e) => {
+    if (dragging && e.pointerId === activePointerId) {
+      let { x, y } = getXY(e);
+      dotX = x;
+      dotY = y;
+      drawPad();
+      const touchX = Math.round((dotX / padSize) * 100);
+      const touchY = Math.round((dotY / padSize) * 100);
+      const messageEvent = new RNBO.MessageEvent(RNBO.TimeNow, 'touch', [touchX, touchY]);
+      device.scheduleEvent(messageEvent);
+      if (touchDebug) touchDebug.textContent = `[${touchX}, ${touchY}]`;
+    }
+  });
 
-    canvas.addEventListener('pointermove', (e) => {
-        if (dragging && e.pointerId === activePointerId) {
-            let { x, y } = getXY(e);
-            dotX = x;
-            dotY = y;
-            lastRaw = { x: dotX, y: dotY };
-            //focusPoint = { x: dotX, y: dotY };
-            //updateFocusFromPointer(dotX, dotY);
-            //updateGridFocus();
-            drawPad();
-            const mapped = mapToOutput(dotX, dotY, focusPoint.x, focusPoint.y);
-            lastMapped = mapped;
-            //console.log('Pointer move mapped:', mapped);
-            const sliderVal = Number(slider?.value || 50);
-            emitTouch(mapped, sliderVal, 'pointermove');
-        }
-    });
+  canvas.addEventListener('pointerup', (e) => {
+    if (e.pointerId === activePointerId) {
+      dragging = false;
+      activePointerId = null;
+      sendMessageToInport(device, 'start', [0]);
+      if (onDeviceStop) onDeviceStop();
+    }
+  });
 
-    const handlePointerEnd = (e, reason) => {
-        if (e.pointerId !== activePointerId) return;
-        dragging = false;
-        activePointerId = null;
-        const mapped = mapToOutput(dotX, dotY, focusPoint.x, focusPoint.y);
-        const sliderVal = Number(slider?.value || 50);
-        emitTouch(mapped, sliderVal, reason);
-        if (startActive) {
-          sendMessageToInport(device, 'start', [0]);
-          //if (control) control.set({active: 0});
-          startActive = false;
-        }
-        animateZoomToZero(1000);
-    };
+  canvas.addEventListener('pointerleave', (e) => {
+    if (e.pointerId === activePointerId) {
+      dragging = false;
+      activePointerId = null;
+      sendMessageToInport(device, 'start', [0]);
+      if (onDeviceStop) onDeviceStop();
+    }
+  });
 
-    canvas.addEventListener('pointerup', (e) => handlePointerEnd(e, 'pointerup'));
-    canvas.addEventListener('pointerleave', (e) => handlePointerEnd(e, 'pointerleave'));
-    canvas.addEventListener('pointercancel', (e) => handlePointerEnd(e, 'pointercancel'));
-    canvas.addEventListener('pointerout', (e) => handlePointerEnd(e, 'pointerout'));
-
-    /* if (user?.onUpdate) {
-      user.onUpdate(updates => {
-        if ('goal' in updates && Array.isArray(updates.goal)) {
-          targetPoint = updates.goal;
-          drawPad();
-        }
-      });
-    } */
-
-    updateGridFocus();
-    drawPad();
-
-    /* if (randomizeButton) {
-      randomizeButton.addEventListener('click', () => {
-        try {
-          const msg = new RNBO.MessageEvent(RNBO.TimeNow, 'randomize', [1]);
-          device.scheduleEvent(msg);
-          randomizeButton.classList.add('active');
-          setTimeout(() => randomizeButton.classList.remove('active'), 120);
-        } catch (err) {
-          console.debug('Could not schedule randomize message', err);
-        }
-      });
-    } */
+  drawPad();
 }
 
 // The launcher allows to launch multiple clients in the same browser window

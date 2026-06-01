@@ -11,26 +11,11 @@
 </head>
 
 <body>
-   <div id="app-root" class="centered-app">
+   <div id="app-root">
 
         <div id="enter-overlay">
             <div id="enter-content">
-              <div id="enter-text">
-                <h1>B3_H4RSH3R</h1>
-                <p>A (harsh) noise-based audio game</p>
-                <p></p>
-                <p>Tap the pad and move around to generate and shape the sound.</p>
-                <p>Move the slider to zoom and increment the abrasivness of noise.</p>
-                <p>Take care of your energy: 
-                  <p>high values of focus reduce your energy,
-                  <p>low values of focus allow you to recover energy.
-                </p>
-                <p>Buttons P1-P8 recall different presets. </p>
-                <p>Turn the sound on and up the volume on your device. </p>
-                <p>Enjoy! </p>
-              </div>
-              <div class="spacer"></div>
-              <div class="spacer"></div>
+              <div id="enter-text"></div>
               <button id="enter-button" type="button"> >>> </button>
             </div>
         </div>
@@ -39,83 +24,27 @@
           <div id="gameover-content">G4M3 0V3R</div>
         </div>
 
-        <div class="ui-frame">
-        <section class="panel">
-          <section class="panel panel-top">
-            <div class="panel-inner">
-              <div class="oscillo-row">
-                <div id="oscilloscope-container" class="control-frame controls">
-                  <canvas id="oscilloscope" width="320" height="70"></canvas>
-                </div>
-                <!-- <div class="lfo-badge">LFO</div> -->
-              </div>
-
-              <div class="meter-group">
-                <div class="metrics-meter">
-                  <div id="harshness-counter" class="metric-box">
-                    <div class="metric-label">HARSH</div>
-                    <div class="metric-value" id="harshness-value">0.00</div>
-                  </div>
-                  <div id="sharpness-counter" class="metric-box">
-                    <div class="metric-label">SHARP</div>
-                    <div class="metric-value" id="sharpness-value">0.00</div>
-                  </div>
-                  <div id="roughness-counter" class="metric-box">
-                    <div class="metric-label">ROUGH</div>
-                    <div class="metric-value" id="roughness-value">0.00</div>
-                  </div>
-                </div>
-
-                <div class="energy-life-row">
-                  <div id="energy-counter" class="meter-row energy-meter">
-                    <div class="meter-label">ENERGY</div>
-                    <div class="energy-bar" min=0 max=1 step=0.01>
-                      <div id="energy-fill"></div>
-                    </div>
-                    <div class="energy-value" id="energy-counter-value">0.80</div>
-                  </div>
-                  <div id="penalty-counter" class="metric-box">
-                    <div class="metric-label">LIFE</div>
-                    <div class="metric-value" id="penalty-counter-value">10.0</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel panel-bottom">
-            <div class="panel-inner">
-              <div class="control-grid">
-                <div id="xy-pad-container" class="control-frame controls pad-frame">
-                  <canvas id="xy-pad" width="320" height="320"></canvas>
-                </div>
-              </div>
-
-              <div id="touch-debug" class="debug-box">[--, --, --]</div>
-
-               <section class="panel panel-presets"> 
-              <div class="preset-row-up">
-                  <button class="preset-btn" type="button" data-preset="0">P1</button>
-                  <button class="preset-btn" type="button" data-preset="1">P2</button>
-                  <button class="preset-btn" type="button" data-preset="2">P3</button>
-                  <button class="preset-btn" type="button" data-preset="3">P4</button>
-                </div>
-                <div class="preset-row-bottom">
-                  <button class="preset-btn" type="button" data-preset="4">P5</button>
-                  <button class="preset-btn" type="button" data-preset="5">P6</button>
-                  <button class="preset-btn" type="button" data-preset="6">P7</button>
-                  <button class="preset-btn" type="button" data-preset="7">P8</button>
-                </div> 
-                </section>
-
-              <div id="xy-slider-container" class="control-frame controls slider-frame">
-                <input id="xy-slider" type="range" min="0" max="100" value="0" />
-              </div>
-            
-              </div>              
-          </section>
-        </section>
+        <div id="oscilloscope-container">
+          <canvas id="oscilloscope" width="320" height="70"></canvas>
         </div>
+
+        <div id="penalty-counter">
+          <div id="sharpness-display">
+            <div class="sharpness-label">SHARP</div>
+            <div id="sharpness-value">0.00</div>
+          </div>
+          <div class="life-label"> &#9829; </div>
+          <div class="life-bar">
+            <div id="life-fill"></div>
+          </div>
+          <div class="life-value" id="penalty-counter-value">10.0</div>
+        </div>
+
+        <div id="xy-pad-container">
+          <canvas id="xy-pad" width="320" height="320"></canvas>
+        </div>
+
+        <div id="touch-debug" class="touch-debug">[--, --, --]</div>
 
       </div>
 
