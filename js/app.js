@@ -607,12 +607,13 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
       drawPad();
       const touchX = Math.round((dotX / padSize) * 100);
       const touchY = Math.round((dotY / padSize) * 100);
-      const messageEvent = new RNBO.MessageEvent(RNBO.TimeNow, 'touch', [touchX, touchY]);
-      device.scheduleEvent(messageEvent);
+      /* const messageEvent = new RNBO.MessageEvent(RNBO.TimeNow, 'touch', [touchX, touchY]);
+      device.scheduleEvent(messageEvent); */
       if (touchDebug) touchDebug.textContent = `[${touchX}, ${touchY}]`;
-      sendMessageToInport(device, 'randomize', [1]);
+      //sendMessageToInport(device, 'randomize', [1]);
+      sendMessageToInport(device, 'touch', [touchX, touchY]);
       sendMessageToInport(device, 'start', [1]);
-      if (onDeviceStart) onDeviceStart();
+      //if (onDeviceStart) onDeviceStart();
     }
   });
 
@@ -624,8 +625,9 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
       drawPad();
       const touchX = Math.round((dotX / padSize) * 100);
       const touchY = Math.round((dotY / padSize) * 100);
-      const messageEvent = new RNBO.MessageEvent(RNBO.TimeNow, 'touch', [touchX, touchY]);
-      device.scheduleEvent(messageEvent);
+      /* const messageEvent = new RNBO.MessageEvent(RNBO.TimeNow, 'touch', [touchX, touchY]);
+      device.scheduleEvent(messageEvent); */
+      sendMessageToInport(device, 'touch', [touchX, touchY]);
       if (touchDebug) touchDebug.textContent = `[${touchX}, ${touchY}]`;
     }
   });
@@ -635,7 +637,7 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
       dragging = false;
       activePointerId = null;
       sendMessageToInport(device, 'start', [0]);
-      if (onDeviceStop) onDeviceStop();
+      //if (onDeviceStop) onDeviceStop();
     }
   });
 
@@ -644,7 +646,7 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
       dragging = false;
       activePointerId = null;
       sendMessageToInport(device, 'start', [0]);
-      if (onDeviceStop) onDeviceStop();
+      //if (onDeviceStop) onDeviceStop();
     }
   });
 
