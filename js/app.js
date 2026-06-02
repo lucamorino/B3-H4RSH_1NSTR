@@ -45,6 +45,22 @@ async function main(audioContext) {
   analyser.connect(outputNode)
   const baseColor = '#000000';
 
+  // Reverb (synthetic impulse response)
+  const reverbConvolver = audioContext.createConvolver();
+  const reverbGain = audioContext.createGain();
+  reverbGain.gain.value = 0.5;
+  const irLength = audioContext.sampleRate * 0.8;
+  const irBuffer = audioContext.createBuffer(2, irLength, audioContext.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = irBuffer.getChannelData(ch);
+    for (let i = 0; i < irLength; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLength, 2);
+    }
+  }
+  reverbConvolver.buffer = irBuffer;
+  reverbConvolver.connect(reverbGain);
+  reverbGain.connect(outputNode);
+
 
   const patchExportURL = "export/patch.export.json";
   let response, patcher;
@@ -101,8 +117,9 @@ async function main(audioContext) {
   return audioBuffer;
 }
 
-  // Connect the device to the web audio graph
+  // Connect the device to the web audio graph (dry + reverb send)
   device.node.connect(analyser);
+  device.node.connect(reverbConvolver);
 
   const inports = getInports(device);
   console.log("Inports:")
