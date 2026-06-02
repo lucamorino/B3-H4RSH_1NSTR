@@ -498,6 +498,15 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
   let dragging = false;
   let activePointerId = null;
 
+  let goalX = 30;
+  let goalY = 30;
+  const goalRadius = 5;
+  let showGoal = false;
+  let autoGoal = false;
+  let autoGoalRAF = null;
+  let autoGoalTargetX = 70;
+  let autoGoalTargetY = 70;
+
   function resizePad() {
     const container = canvas.parentElement;
     const rect = container.getBoundingClientRect();
@@ -533,6 +542,16 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
 
   function drawPad() {
     ctx.clearRect(0, 0, padSize, padSize);
+
+    if (showGoal) {
+      const gPixX = (goalX / 100) * padSize;
+      const gPixY = (goalY / 100) * padSize;
+      const s = (3 / 100) * padSize;
+      ctx.strokeStyle = accentColor || '#f4f4f4';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(gPixX - s / 2, gPixY - s / 2, s, s);
+    }
+
     ctx.beginPath();
     ctx.arc(dotX, dotY, dotRadius, 0, 2 * Math.PI);
     ctx.fillStyle = accentColor || '#ff44b4';
@@ -613,6 +632,67 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
   });
 
   drawPad();
+
+  function startAutoGoal() {
+    if (autoGoalRAF) return;
+    const animate = () => {
+      if (!autoGoal) { autoGoalRAF = null; return; }
+      const dx = autoGoalTargetX - goalX;
+      const dy = autoGoalTargetY - goalY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 2) {
+        autoGoalTargetX = Math.random() * 80 + 10;
+        autoGoalTargetY = Math.random() * 80 + 10;
+      } else {
+        const step = Math.min(dist, 0.3);
+        goalX += (dx / dist) * step;
+        goalY += (dy / dist) * step;
+        goalX = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalX));
+        goalY = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalY));
+        sendMessageToInport(device, 'goal', [goalX, goalY, goalRadius]);
+      }
+      drawPad();
+      autoGoalRAF = requestAnimationFrame(animate);
+    };
+    autoGoalRAF = requestAnimationFrame(animate);
+  }
+
+  function stopAutoGoal() {
+    if (autoGoalRAF) { cancelAnimationFrame(autoGoalRAF); autoGoalRAF = null; }
+  }
+
+  const btnRandPreset = document.getElementById('btn-rand-preset');
+  if (btnRandPreset) {
+    btnRandPreset.addEventListener('click', () => {
+      if (!Array.isArray(presets) || presets.length === 0) return;
+      const idx = Math.floor(Math.random() * presets.length);
+      loadPresetAtIndex(device, presets, idx);
+    });
+  }
+
+  const btnShowGoal = document.getElementById('btn-show-goal');
+  if (btnShowGoal) {
+    btnShowGoal.addEventListener('click', () => {
+      showGoal = !showGoal;
+      btnShowGoal.classList.toggle('active', showGoal);
+      drawPad();
+    });
+  }
+
+  const btnAutoGoal = document.getElementById('btn-auto-goal');
+  if (btnAutoGoal) {
+    btnAutoGoal.addEventListener('click', () => {
+      autoGoal = !autoGoal;
+      btnAutoGoal.classList.toggle('active', autoGoal);
+      if (autoGoal) {
+        autoGoalTargetX = Math.random() * 80 + 10;
+        autoGoalTargetY = Math.random() * 80 + 10;
+        startAutoGoal();
+      } else {
+        stopAutoGoal();
+      }
+    });
+  }
 }
 
 // The launcher allows to launch multiple clients in the same browser window

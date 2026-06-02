@@ -600,6 +600,44 @@ a:hover {
   opacity: 0.55;
 }
 
+#pad-controls {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  width: 100%;
+  padding: 0 0.5rem;
+}
+
+.pad-ctrl-btn {
+  flex: 1;
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 7px 0;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  text-transform: uppercase;
+  font-family: var(--sw-font-family);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.pad-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.pad-ctrl-btn:active {
+  transform: translateY(1px);
+}
+
+.pad-ctrl-btn.active {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: var(--sw-accent-color);
+  color: var(--sw-accent-color);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.1);
+}
+
 /* Debug display for touch messages */
 .touch-debug {
   font-family: monospace;
