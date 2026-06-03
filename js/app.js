@@ -663,12 +663,12 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
         autoGoalTargetX = Math.random() * 80 + 10;
         autoGoalTargetY = Math.random() * 80 + 10;
       } else {
-        const step = Math.min(dist, 0.3);
+        const step = Math.min(dist, 0.5);
         goalX += (dx / dist) * step;
         goalY += (dy / dist) * step;
         goalX = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalX));
         goalY = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalY));
-        sendMessageToInport(device, 'goal', [goalX, goalY, goalRadius]);
+        sendMessageToInport(device, 'goal', [goalX, goalY, 4]); //goalRadius
       }
       drawPad();
       autoGoalRAF = requestAnimationFrame(animate);
