@@ -32,7 +32,7 @@ if (screen.orientation && screen.orientation.lock) {
 
 let oscilloscopeStarted = false;
 let backgroundRAF = null;
-let backgroundState = { mode: 'idle', gain: 0, color: 'black' };
+let backgroundState = { mode: 'idle' };
 //let currentHarsh = 0;
 //let currentPenalty = 0;
 
@@ -133,7 +133,7 @@ async function main(audioContext) {
       cancelAnimationFrame(backgroundRAF);
       backgroundRAF = null;
     }
-    backgroundState = { mode: 'idle', gain: 0, color: 'black' };
+    backgroundState = { mode: 'idle' };
     document.body.style.background = baseColor;
     document.body.style.backgroundColor = baseColor;
   }
@@ -144,38 +144,21 @@ async function main(audioContext) {
     const dataArray = new Uint8Array(bufferLength);
 
     const render = () => {
-      const { mode, gain, color } = backgroundState;
-      let brightness = 0;
-
-      if (gain > 0 && mode !== 'idle') {
-        analyser.getByteTimeDomainData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += Math.abs(dataArray[i] - 128);
-        }
-        const amplitude = sum / bufferLength;
-        brightness = Math.min(255, Math.floor((amplitude / 128) * 255 * gain));
-        if (mode === 'penalty') brightness = Math.min(255, brightness + 30);
-        if (mode === 'harsh') brightness = Math.max(20, brightness);
-      }
-
-      if (mode === 'penalty' && color === 'red') {
-        const val = `rgba(255, ${brightness}, ${brightness}, 1)`;
-        document.body.style.background = val;
-        document.body.style.backgroundColor = val;
-      } else if (mode === 'harsh') {
-        const val = `rgb(${brightness}, ${brightness}, ${brightness})`;
-        document.body.style.background = val;
-        document.body.style.backgroundColor = val;
-      } else {
-        document.body.style.background = baseColor;
-        document.body.style.backgroundColor = baseColor;
-      }
-
-      if (backgroundState.mode === 'idle') {
+      if (backgroundState.mode !== 'harsh') {
         stopBackground();
         return;
       }
+
+      analyser.getByteTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += Math.abs(dataArray[i] - 128);
+      }
+      const amplitude = sum / bufferLength;
+      const brightness = Math.max(20, Math.min(255, Math.floor((amplitude / 128) * 255 * 0.8)));
+      const val = `rgb(${brightness}, ${brightness}, ${brightness})`;
+      document.body.style.background = val;
+      document.body.style.backgroundColor = val;
 
       backgroundRAF = requestAnimationFrame(render);
     };
@@ -183,30 +166,23 @@ async function main(audioContext) {
     backgroundRAF = requestAnimationFrame(render);
   }
 
-  function applyBackgroundMode(harshness, penalty = 0) {
+  function applyBackgroundMode(harshness) {
     if (harshness > 0) {
-      backgroundState = { mode: 'harsh', gain: 0.8, color: 'white' };
-    } else if (penalty > 0) {
-      backgroundState = { mode: 'penalty', gain: 0.4, color: 'red' };
-    } else {
-      backgroundState = { mode: 'idle', gain: 0, color: 'black' };
-    }
-
-    if (backgroundState.mode === 'idle') {
-      stopBackground();
-    } else {
+      backgroundState = { mode: 'harsh' };
       startBackgroundLoop();
+    } else {
+      stopBackground();
     }
   }
 
   // initial goal message
-  const goal = [30, 30, 5];
+  const goal = [30, 30, 0];
   sendMessageToInport(device, 'goal', goal);
 
   if (presets.length > 0) loadPresetAtIndex(device, presets, 0);
 
-  let deviceStartedAt = null;
-  let isActive = false;
+  getParameter(device, 'fb_gain').value = 0.28;
+  getParameter(device, 'fb_trim').value = 0.34;
 
   // Penalty counter state
   let penaltyCounter = 10.0;
@@ -280,12 +256,6 @@ async function main(audioContext) {
 
   // Listen for messages from RNBO device
   device.messageEvent.subscribe((ev) => {
-    if (ev.tag === "out4") {
-      if (!isActive) return;
-      const harshness = ev.payload;
-      if (deviceStartedAt !== null && (performance.now() - deviceStartedAt) < 250) return;
-      applyBackgroundMode(harshness, 0);
-    }
     if (ev.tag === "out2") {
       const sharpness = ev.payload;
       const el = document.getElementById('sharpness-value');
@@ -293,6 +263,16 @@ async function main(audioContext) {
     }
     if (ev.tag === "out3") {
       // loudness — received but not displayed
+    }
+    if (ev.tag === "out4") {
+      applyBackgroundMode(ev.payload);
+    }
+    if (ev.tag === "out5") {
+      const distance = ev.payload;
+      const d = Math.max(0, Math.min(1, distance));
+      const el = document.getElementById('distance-value');
+      if (el) el.textContent = d.toFixed(2);
+      reverbGain.gain.setTargetAtTime(0.33 + 0.42 * d, audioContext.currentTime, 0.05);
     }
   });
 
@@ -306,10 +286,7 @@ async function main(audioContext) {
       if (overlay) overlay.style.display = visible ? 'flex' : 'none';
     };
     setGameoverOverlay(false);
-    setupUI(device, presets, audioContext,
-      () => { isActive = true; deviceStartedAt = performance.now(); },
-      () => { isActive = false; }
-    );
+    setupUI(device, presets, audioContext);
     startOscilloscope(analyser);
   }
 
@@ -504,7 +481,7 @@ function startOscilloscope(analyser) {
   draw();
 }
 
-function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
+function setupUI(device, presets, audioContext) {
   const canvas = document.getElementById('xy-pad');
   const ctx = canvas.getContext('2d');
   const touchDebug = document.getElementById('touch-debug');
@@ -676,7 +653,7 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
         goalY += (dy / dist) * step;
         goalX = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalX));
         goalY = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalY));
-        sendMessageToInport(device, 'goal', [goalX, goalY, 4]); //goalRadius
+        sendMessageToInport(device, 'goal', [goalX, goalY, 0]); //goalRadius
       }
       drawPad();
       autoGoalRAF = requestAnimationFrame(animate);
@@ -702,6 +679,8 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
     btnShowGoal.addEventListener('click', () => {
       showGoal = !showGoal;
       btnShowGoal.classList.toggle('active', showGoal);
+      const distDisplay = document.getElementById('distance-display');
+      if (distDisplay) distDisplay.classList.toggle('visible', showGoal);
       drawPad();
     });
   }

@@ -371,6 +371,7 @@ a:hover {
 }
 
 #xy-pad-container {
+  position: relative;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -380,6 +381,37 @@ a:hover {
   border: 1px solid rgba(255, 255, 255, 0.3);
   outline: 1px solid rgba(255, 255, 255, 0.6);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+#distance-display {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  text-align: center;
+  color: rgba(244, 244, 244, 0.45);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+#distance-display.visible {
+  display: flex;
+}
+
+.distance-label {
+  font-size: 9px;
+  opacity: 0.7;
+  letter-spacing: 2px;
+}
+
+#distance-value {
+  font-size: 18px;
+  letter-spacing: 1px;
 }
 
 #xy-pad {
