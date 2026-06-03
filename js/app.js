@@ -199,6 +199,8 @@ async function main(audioContext) {
   const goal = [30, 30, 5];
   sendMessageToInport(device, 'goal', goal);
 
+  if (presets.length > 0) loadPresetAtIndex(device, presets, 0);
+
   let deviceStartedAt = null;
   let isActive = false;
 
