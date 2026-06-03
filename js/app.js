@@ -581,6 +581,10 @@ function setupUI(device, presets, audioContext, onDeviceStart, onDeviceStop) {
   resizePad();
   window.addEventListener('resize', resizePad);
 
+  const initTouchX = Math.round((dotX / padSize) * 100);
+  const initTouchY = Math.round((dotY / padSize) * 100);
+  sendMessageToInport(device, 'touch', [initTouchX, initTouchY]);
+
   if (presetButtons && presetButtons.length) {
     presetButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
