@@ -1,4 +1,8 @@
 
+if (screen.orientation && screen.orientation.lock) {
+  screen.orientation.lock('portrait').catch(() => {});
+}
+
 //import devicemotion from '@ircam/devicemotion';
 
 //import "../js/lib/guardrails.js";

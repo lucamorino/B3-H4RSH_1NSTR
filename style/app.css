@@ -157,6 +157,9 @@ body {
 
 * {
   box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 body.loading {
@@ -904,6 +907,26 @@ a:hover {
   .user-params {
     grid-template-columns: 1fr;
   }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  #rotate-overlay {
+    display: flex;
+  }
+}
+
+#rotate-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #050505;
+  color: var(--sw-font-color);
+  font-size: 1.4rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  align-items: center;
+  justify-content: center;
 }
 
 @media (max-width: 600px) {
