@@ -321,15 +321,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const enterTexts = [
     [
       'B3-H4RSH_S0L0_1NSTR',
-      'Tap and hold the pad to generate the sound.',
-      'Every tap brings a new noise.',
-      'Drag around and move the slider to shape it.',
-    ],
-    /* [
-      'Turn up the volume on your device.',
-      'Turn up the brightness of your screen.',
+      'Welcome to B3-H4RSH,here you can test the instrument',
+      'Tap and hold the pad to generate the sound. Drag around to shape it.', 
+      'Try to reach the target point for making the sound harsh!',
+      'Turn up the volume and the brightness on your device.',
+      'Lock the orientation in portrait.',
       'Enjoy!',
-    ], */
+    ],
   ];
   let enterTextIndex = 0;
 
