@@ -66,10 +66,15 @@ async function main(audioContext) {
   reverbGain.connect(outputNode);
 
 
-  const patchExportURL = "export/patch.export.json";
+  // Newest export first, previous export name as fallback
+  const patchExportURLs = ["export/BH1.export.json", "export/patch.export.json"];
   let response, patcher;
   try {
-      response = await fetch(patchExportURL);
+      for (const url of patchExportURLs) {
+        response = await fetch(url);
+        if (response.ok) break;
+        console.warn(`RNBO export not found at ${url}`);
+      }
       patcher = await response.json();
   
       if (!window.RNBO) {
@@ -82,11 +87,14 @@ async function main(audioContext) {
       return;
   }
 
-  let presets = patcher.presets || [];
-  if (presets.length < 1) {
-      console.log("No presets defined");
-  } else {
-      console.log(`Found ${presets.length} presets`);
+  // Presets are no longer stored in the RNBO device: they are read from a
+  // text file and laid out as points in the pad (see createPresetSpace)
+  let presets = [];
+  try {
+      presets = parsePresets(await (await fetch(PRESETS_URL)).text());
+      console.log(`Found ${presets.length} presets in ${PRESETS_URL}`);
+  } catch (err) {
+      console.error("Failed to load presets file:", err);
   }
 
 
@@ -176,13 +184,10 @@ async function main(audioContext) {
   }
 
   // initial goal message
-  const goal = [30, 30, 0];
+  const goal = [30, 30, 40];
   sendMessageToInport(device, 'goal', goal);
 
-  if (presets.length > 0) loadPresetAtIndex(device, presets, 0);
-
-  getParameter(device, 'fb_gain').value = 0.28;
-  getParameter(device, 'fb_trim').value = 0.34;
+  const presetSpace = createPresetSpace(device, presets);
 
   // Penalty counter state
   let penaltyCounter = 10.0;
@@ -286,7 +291,7 @@ async function main(audioContext) {
       if (overlay) overlay.style.display = visible ? 'flex' : 'none';
     };
     setGameoverOverlay(false);
-    setupUI(device, presets, audioContext);
+    setupUI(device, presetSpace, audioContext);
     startOscilloscope(analyser);
   }
 
@@ -399,17 +404,147 @@ function getParameter(device, parameterName) {
   const parameter = parameters.find((param) => param.name === parameterName);
   return parameter;
 }
-function loadPresetAtIndex(device, presets, index) {
-  const presetIndex = Math.floor(Number(index));
-  if (!Number.isFinite(presetIndex) || presetIndex < 0 || presetIndex >= presets.length) {
-    console.warn('Ignoring invalid preset index:', index);
-    return;
-  }
-  const preset = presets[presetIndex];
-  if (!preset) return;
-  console.log(`Loading preset ${preset.name}`);
-  device.setPreset(preset.preset);
+
+// ---------------------------------------------------------------------
+// PRESET SPACE
+// ---------------------------------------------------------------------
+const PRESETS_URL = 'BH1-presets.txt';
+
+// Kernel width of the regression, in pad units (0-1). Small values make each
+// preset a distinct plateau, large values blur all presets together.
+const PRESET_KERNEL_WIDTH = 0.1;
+
+// Speed (pad widths per second) at which navigation of the preset space is
+// halved. Slower than this, the preset cursor follows the finger almost 1:1;
+// faster, the cursor covers less and less ground.
+const NAV_REF_SPEED = 0.35;
+// How sharply the navigation gain falls off above NAV_REF_SPEED. With values
+// > 1, a faster gesture covers *less* preset space than a slower one.
+const NAV_FALLOFF = 2;
+
+// When the finger holds still for DRIFT_DELAY ms, the preset cursor slowly
+// drifts toward it at DRIFT_SPEED pad widths per second, until it moves again.
+const DRIFT_DELAY = 1000;
+const DRIFT_SPEED = 0.03;
+// Finger movement (pad widths) tolerated as "still", to absorb touch jitter
+const DRIFT_STILL_TOLERANCE = 0.01;
+
+// Parse the coll-style presets file: "index, v1 v2 ... v7;" where the values
+// are style (1-3), fb_gain (4), fb_trim (5), fade (6) and mod (7).
+function parsePresets(text) {
+  return text
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const comma = entry.indexOf(',');
+      const values = entry
+        .slice(comma + 1)
+        .trim()
+        .split(/\s+/)
+        .map(Number);
+      if (comma < 0 || values.length < 7 || values.some((v) => !Number.isFinite(v))) {
+        console.warn('Ignoring malformed preset:', entry);
+        return null;
+      }
+      return { index: Number(entry.slice(0, comma)), values: values.slice(0, 7) };
+    })
+    .filter(Boolean);
 }
+
+// Distribute the presets on a regular grid covering the pad (0-1 coordinates).
+function layoutPresets(count) {
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const points = [];
+  for (let i = 0; i < count; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    points.push({ x: (col + 0.5) / cols, y: (row + 0.5) / rows });
+  }
+  return points;
+}
+
+// The presets become points of the pad; any position of the pad is mapped to
+// a full set of parameters by a kernel regression (Nadaraya-Watson, gaussian
+// kernel) fitted on those points. The output is always a weighted average of
+// the presets, so the morph is continuous and never leaves the range of
+// values the presets were tuned in.
+function createPresetSpace(device, presets) {
+  const positions = layoutPresets(presets.length);
+  const points = presets.map((preset, i) => ({ ...positions[i], preset }));
+
+  const inportTags = new Set(getInports(device).map((inport) => inport.tag));
+  const setParam = (name, value) => {
+    const param = getParameter(device, name);
+    if (!param) return false;
+    param.value = Math.max(param.min, Math.min(param.max, value));
+    return true;
+  };
+  let lastSent = null;
+
+  function weightsAt(x, y) {
+    const k = 1 / (2 * PRESET_KERNEL_WIDTH * PRESET_KERNEL_WIDTH);
+    // subtract the smallest distance before exp() so that at least one
+    // weight is 1 and the sum can never underflow to 0
+    const d2 = points.map((p) => (p.x - x) ** 2 + (p.y - y) ** 2);
+    const d2min = Math.min(...d2);
+    const w = d2.map((d) => Math.exp(-(d - d2min) * k));
+    const sum = w.reduce((a, b) => a + b, 0);
+    return w.map((v) => v / sum);
+  }
+
+  function valuesAt(x, y) {
+    const w = weightsAt(x, y);
+    const out = new Array(7).fill(0);
+    points.forEach((p, i) => {
+      for (let j = 0; j < 7; j++) out[j] += w[i] * p.preset.values[j];
+    });
+    return out;
+  }
+
+  // Morph the device to the given position of the preset space (0-1 coords)
+  function apply(x, y) {
+    if (points.length === 0) return null;
+    const v = valuesAt(x, y);
+    const changed = (from, to) =>
+      !lastSent || v.slice(from, to).some((val, j) => val !== lastSent[from + j]);
+
+    if (changed(0, 3)) {
+      const style = v.slice(0, 3);
+      if (inportTags.has('style')) sendMessageToInport(device, 'style', style);
+      // older exports expose the style values as parameters
+      ['del', 'phase', 'bp'].forEach((name, j) => setParam(name, style[j]));
+    }
+    if (changed(3, 4)) setParam('fb_gain', v[3]);
+    if (changed(4, 5)) setParam('fb_trim', v[4]);
+    if (changed(5, 6) && !setParam('fade', v[5]) && inportTags.has('fade')) {
+      sendMessageToInport(device, 'fade', [v[5]]);
+    }
+    if (changed(6, 7) && !setParam('mod', v[6]) && inportTags.has('mod')) {
+      sendMessageToInport(device, 'mod', [v[6]]);
+    }
+    lastSent = v;
+    return v;
+  }
+
+  // Randomly re-assign the presets to the points of the space
+  function shuffle() {
+    for (let i = points.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [points[i].preset, points[j].preset] = [points[j].preset, points[i].preset];
+    }
+  }
+
+  return { points, weightsAt, valuesAt, apply, shuffle };
+}
+
+// Share of the finger movement transferred to the preset cursor, given the
+// finger speed in pad widths per second.
+function navigationGain(speed) {
+  return 1 / (1 + Math.pow(speed / NAV_REF_SPEED, NAV_FALLOFF));
+}
+
 function sendMessageToInport(device, inportTag, values) {
   //Turn the text into a list of numbers (RNBO messages must be numbers, not text)
   //const messsageValues = values.split(/\s+/).map((s) => parseFloat(s));
@@ -481,11 +616,10 @@ function startOscilloscope(analyser) {
   draw();
 }
 
-function setupUI(device, presets, audioContext) {
+function setupUI(device, presetSpace, audioContext) {
   const canvas = document.getElementById('xy-pad');
   const ctx = canvas.getContext('2d');
   const touchDebug = document.getElementById('touch-debug');
-  const presetButtons = document.querySelectorAll('.preset-btn');
   const accentColor = getComputedStyle(document.documentElement)
     .getPropertyValue('--sw-accent-color').trim() || '#ff44b4';
 
@@ -495,6 +629,22 @@ function setupUI(device, presets, audioContext) {
   let dotY = padSize / 2;
   let dragging = false;
   let activePointerId = null;
+
+  // Position in the preset space (0-1). It is driven by the finger movement
+  // but scaled by navigationGain(): the faster the finger, the less it moves.
+  let cursorX = 0.5;
+  let cursorY = 0.5;
+  let lastX = dotX;
+  let lastY = dotY;
+  let lastMoveTime = 0;
+  let speed = 0; // smoothed finger speed, pad widths per second
+
+  // immobility tracking for the drift of the preset cursor toward the finger
+  let stillX = dotX;
+  let stillY = dotY;
+  let stillSince = 0;
+  let driftRAF = null;
+  let driftLastTime = 0;
 
   let goalX = 30;
   let goalY = 30;
@@ -541,6 +691,16 @@ function setupUI(device, presets, audioContext) {
   function drawPad() {
     ctx.clearRect(0, 0, padSize, padSize);
 
+    // preset points, lit by their current weight in the morph
+    const weights = presetSpace.weightsAt(cursorX, cursorY);
+    presetSpace.points.forEach((p, i) => {
+      const w = weights[i];
+      ctx.beginPath();
+      ctx.arc(p.x * padSize, p.y * padSize, 2 + 4 * w, 0, 2 * Math.PI);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.25 + 0.75 * w})`;
+      ctx.fill();
+    });
+
     if (showGoal) {
       const gPixX = (goalX / 100) * padSize;
       const gPixY = (goalY / 100) * padSize;
@@ -549,6 +709,20 @@ function setupUI(device, presets, audioContext) {
       ctx.lineWidth = 1;
       ctx.strokeRect(gPixX - s / 2, gPixY - s / 2, s, s);
     }
+
+    // preset cursor: where the sound actually is in the preset space
+    const cPixX = cursorX * padSize;
+    const cPixY = cursorY * padSize;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(dotX, dotY);
+    ctx.lineTo(cPixX, cPixY);
+    ctx.stroke();
+    ctx.strokeStyle = '#f4f4f4';
+    ctx.beginPath();
+    ctx.arc(cPixX, cPixY, dotRadius * 0.7, 0, 2 * Math.PI);
+    ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(dotX, dotY, dotRadius, 0, 2 * Math.PI);
@@ -560,23 +734,67 @@ function setupUI(device, presets, audioContext) {
   }
 
   resizePad();
+  // start with the finger dot on the preset cursor, at the centre of the pad
+  dotX = lastX = cursorX * padSize;
+  dotY = lastY = cursorY * padSize;
+  drawPad();
   window.addEventListener('resize', resizePad);
 
   const initTouchX = Math.round((dotX / padSize) * 100);
   const initTouchY = Math.round((dotY / padSize) * 100);
   sendMessageToInport(device, 'touch', [initTouchX, initTouchY]);
 
-  if (presetButtons && presetButtons.length) {
-    presetButtons.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const presetIndex = Number(btn.dataset.preset || 0);
-        if (!Array.isArray(presets) || presets.length <= presetIndex) {
-          console.warn('Preset index out of range:', presetIndex);
-          return;
-        }
-        loadPresetAtIndex(device, presets, presetIndex);
-      });
-    });
+  presetSpace.apply(cursorX, cursorY);
+
+  // Restart the immobility timer with the finger at (x, y) pixels
+  function markStill(x, y, time) {
+    stillX = x;
+    stillY = y;
+    stillSince = time;
+  }
+
+  // While the finger is held still, pull the preset cursor slowly toward it
+  function driftLoop(time) {
+    if (!dragging) { driftRAF = null; return; }
+    const dt = Math.min(0.1, (time - driftLastTime) / 1000);
+    driftLastTime = time;
+    if (time - stillSince >= DRIFT_DELAY && dt > 0) {
+      const dx = dotX / padSize - cursorX;
+      const dy = dotY / padSize - cursorY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 1e-4) {
+        const step = Math.min(dist, DRIFT_SPEED * dt);
+        cursorX += (dx / dist) * step;
+        cursorY += (dy / dist) * step;
+        presetSpace.apply(cursorX, cursorY);
+        drawPad();
+      }
+    }
+    driftRAF = requestAnimationFrame(driftLoop);
+  }
+
+  // Move the preset cursor according to a finger movement to (x, y) pixels
+  function navigate(x, y, time) {
+    if (Math.hypot(x - stillX, y - stillY) > DRIFT_STILL_TOLERANCE * padSize) {
+      markStill(x, y, time);
+    }
+    const dt = (time - lastMoveTime) / 1000;
+    const dx = (x - lastX) / padSize;
+    const dy = (y - lastY) / padSize;
+    lastX = x;
+    lastY = y;
+    lastMoveTime = time;
+    if (!(dt > 0)) return;
+
+    const instantSpeed = Math.hypot(dx, dy) / dt;
+    // smooth over ~60ms so that single jittery events don't open/close the gain
+    const a = 1 - Math.exp(-dt / 0.06);
+    speed += (instantSpeed - speed) * a;
+
+    const gain = navigationGain(speed);
+    cursorX = Math.max(0, Math.min(1, cursorX + dx * gain));
+    cursorY = Math.max(0, Math.min(1, cursorY + dy * gain));
+    presetSpace.apply(cursorX, cursorY);
   }
 
   canvas.addEventListener('pointerdown', async (e) => {
@@ -589,6 +807,17 @@ function setupUI(device, presets, audioContext) {
       let { x, y } = getXY(e);
       dotX = x;
       dotY = y;
+      // a new touch teleports the preset cursor under the finger
+      lastX = x;
+      lastY = y;
+      lastMoveTime = e.timeStamp;
+      speed = 0;
+      markStill(x, y, e.timeStamp);
+      driftLastTime = e.timeStamp;
+      if (!driftRAF) driftRAF = requestAnimationFrame(driftLoop);
+      cursorX = Math.max(0, Math.min(1, x / padSize));
+      cursorY = Math.max(0, Math.min(1, y / padSize));
+      presetSpace.apply(cursorX, cursorY);
       drawPad();
       const touchX = Math.round((dotX / padSize) * 100);
       const touchY = Math.round((dotY / padSize) * 100);
@@ -607,6 +836,7 @@ function setupUI(device, presets, audioContext) {
       let { x, y } = getXY(e);
       dotX = x;
       dotY = y;
+      navigate(x, y, e.timeStamp);
       drawPad();
       const touchX = Math.round((dotX / padSize) * 100);
       const touchY = Math.round((dotY / padSize) * 100);
@@ -648,7 +878,8 @@ function setupUI(device, presets, audioContext) {
         autoGoalTargetX = Math.random() * 80 + 10;
         autoGoalTargetY = Math.random() * 80 + 10;
       } else {
-        const step = Math.min(dist, 0.5);
+        // target speed, in pad units (0-100) per animation frame
+        const step = Math.min(dist, 0.2);
         goalX += (dx / dist) * step;
         goalY += (dy / dist) * step;
         goalX = Math.max(goalRadius + 1, Math.min(100 - goalRadius - 1, goalX));
@@ -668,9 +899,10 @@ function setupUI(device, presets, audioContext) {
   const btnRandPreset = document.getElementById('btn-rand-preset');
   if (btnRandPreset) {
     btnRandPreset.addEventListener('click', () => {
-      if (!Array.isArray(presets) || presets.length === 0) return;
-      const idx = Math.floor(Math.random() * presets.length);
-      loadPresetAtIndex(device, presets, idx);
+      // presets are points of the pad now: re-distribute them in the space
+      presetSpace.shuffle();
+      presetSpace.apply(cursorX, cursorY);
+      drawPad();
     });
   }
 
