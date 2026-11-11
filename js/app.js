@@ -184,7 +184,7 @@ async function main(audioContext) {
   }
 
   // initial goal message
-  const goal = [30, 30, 40];
+  const goal = [30, 30, 90];
   sendMessageToInport(device, 'goal', goal);
 
   const presetSpace = createPresetSpace(device, presets);
